@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pokémon Card Viewer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #f0f0f0;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    #card-input {
+      max-width: 800px;
+      margin: 0 auto 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #card-input input {
+      flex: 1;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+      min-width: 250px;
+    }
+    #card-input button {
+      padding: 10px 16px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #card-input button:hover {
+      background-color: #2980b9;
+    }
+    #filter-bar {
+      max-width: 800px;
+      margin: 0 auto 20px;
+      display: none;
+      justify-content: center;
+    }
+    #filter-bar input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+      min-width: 250px;
+    }
+    #card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 16px;
+      max-width: 1200px;
+      margin: auto;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      cursor: pointer;
+    }
+    .card img {
+      width: 100%;
+      border-radius: 8px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+    .card img:hover,
+    .card.selected img {
+      transform: scale(1.05);
+      box-shadow: 0 0 12px 4px rgba(255, 200, 0, 0.6);
+    }
+    .card-label {
+      margin-top: 5px;
+      font-size: 0.9rem;
+      color: #333;
+    }
+    .tooltip {
+      visibility: hidden;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      padding: 5px 10px;
+      border-radius: 6px;
+      position: absolute;
+      z-index: 1;
+      bottom: 110%;
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+    .card:hover .tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+    #modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      backdrop-filter: blur(10px);
+      background-color: rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 1000;
+    }
+    #modal img {
+      max-height: 90vh;
+      max-width: 90vw;
+      border-radius: 10px;
+    }
+    #modal.show {
+      visibility: visible;
+      opacity: 1;
+    }
+    #shortcut-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(6px);
+      color: #fff;
+      font-family: sans-serif;
+      display: none;
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+    #shortcut-modal ul {
+      list-style: none;
+      padding: 0;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <h1>Pokémon Card Viewer</h1>
+
+  <div id="card-input">
+    <input id="cardIDs" placeholder="Enter card IDs separated by commas (e.g. sv9-175, sv9-26)" />
+    <button onclick="loadCards()">Load Cards</button>
+  </div>
+
+  <div id="filter-bar">
+    <input id="searchBox" placeholder="Search cards..." oninput="filterCards()" />
+  </div>
+
+  <div id="card-grid" class="card-grid"></div>
+
+  <div id="modal" onclick="closeModal()">
+    <img id="modal-img" src="" alt="Full Card" />
+  </div>
+
+  <div id="shortcut-modal">
+    <div style="background:#222;padding:20px;border-radius:10px;max-width:600px;width:100%;">
+      <h2>Keyboard Shortcuts</h2>
+      <ul>
+        <li><strong>/</strong> – Toggle search bar</li>
+        <li><strong>?</strong> – Show this help dialog</li>
+        <li><strong>h/j/k/l</strong> or <strong>Arrow keys</strong> – Navigate cards</li>
+        <li><strong>Enter</strong> – Open modal for selected card</li>
+        <li><strong>Esc</strong> – Close modals</li>
+      </ul>
+      <button onclick="document.getElementById('shortcut-modal').style.display='none'" style="margin-top:15px;padding:8px 16px;font-size:1rem;border:none;border-radius:5px;background:#3498db;color:#fff;cursor:pointer;">Close</button>
+    </div>
+  </div>
+
+  <script>
+    let loadedCards = [], currentIndex = 0, selectedIndex = 0;
+
+    function getColumnCount() {
+      const grid = document.getElementById("card-grid");
+      const style = window.getComputedStyle(grid);
+      return style.getPropertyValue("grid-template-columns").split(" ").length;
+    }
+
+    function generateDefaultIDs() {
+      return Array.from({ length: 100 }, (_, i) => `sv1-${i + 1}`);
+    }
+
+    function loadCards() {
+      const input = document.getElementById('cardIDs').value;
+      const cardGrid = document.getElementById('card-grid');
+      cardGrid.innerHTML = '';
+      loadedCards = [];
+
+      const ids = input ? input.split(',').map(id => id.trim()).filter(Boolean) : generateDefaultIDs();
+
+      ids.forEach((id, index) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.setAttribute("data-id", id.toLowerCase());
+        card.setAttribute("data-index", index);
+        card.onmouseover = () => { selectedIndex = index; highlightSelected(); };
+
+        const img = document.createElement("img");
+        img.src = `https://images.pokemontcg.io/${id}/large.png`;
+        img.alt = id;
+        img.onclick = () => openModal(img.src, index);
+
+        const tooltip = document.createElement("div");
+        tooltip.className = "tooltip";
+        tooltip.textContent = `Card ID: ${id}`;
+
+        const label = document.createElement("div");
+        label.className = "card-label";
+        label.textContent = id;
+
+        card.append(img, tooltip, label);
+        cardGrid.appendChild(card);
+        loadedCards.push(card);
+      });
+
+      highlightSelected();
+    }
+
+    function filterCards() {
+      const query = document.getElementById('searchBox').value.toLowerCase();
+      loadedCards.forEach(card => {
+        const id = card.getAttribute("data-id");
+        card.style.display = id.includes(query) ? "block" : "none";
+      });
+    }
+
+    function openModal(src, index) {
+      currentIndex = index;
+      document.getElementById("modal-img").src = src;
+      document.getElementById("modal").classList.add("show");
+    }
+
+    function closeModal() {
+      document.getElementById("modal").classList.remove("show");
+    }
+
+    function highlightSelected() {
+      loadedCards.forEach((card, i) => {
+        card.classList.toggle("selected", i === selectedIndex);
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const modal = document.getElementById("modal");
+      const searchBar = document.getElementById("filter-bar");
+      const helpModal = document.getElementById("shortcut-modal");
+      const cols = getColumnCount();
+
+      if (e.key === '?') {
+        helpModal.style.display = helpModal.style.display === 'flex' ? 'none' : 'flex';
+      } else if (e.key === '/') {
+        e.preventDefault();
+        searchBar.style.display = searchBar.style.display === 'flex' ? 'none' : 'flex';
+        if (searchBar.style.display === 'flex') document.getElementById('searchBox').focus();
+      } else if (e.key === 'Escape') {
+        closeModal();
+        helpModal.style.display = 'none';
+      } else if (modal.classList.contains('show')) {
+        if ((e.key === 'j' || e.key === 'ArrowRight') && currentIndex < loadedCards.length - 1) {
+          openModal(loadedCards[++currentIndex].querySelector('img').src, currentIndex);
+        } else if ((e.key === 'k' || e.key === 'ArrowLeft') && currentIndex > 0) {
+          openModal(loadedCards[--currentIndex].querySelector('img').src, currentIndex);
+        }
+      } else {
+        if ((e.key === 'h' || e.key === 'ArrowLeft') && selectedIndex > 0) selectedIndex--;
+        else if ((e.key === 'l' || e.key === 'ArrowRight') && selectedIndex < loadedCards.length - 1) selectedIndex++;
+        else if ((e.key === 'k' || e.key === 'ArrowUp') && selectedIndex - cols >= 0) selectedIndex -= cols;
+        else if ((e.key === 'j' || e.key === 'ArrowDown') && selectedIndex + cols < loadedCards.length) selectedIndex += cols;
+        else if (e.key === 'Enter') openModal(loadedCards[selectedIndex].querySelector('img').src, selectedIndex);
+        highlightSelected();
+      }
+    });
+
+    window.onload = loadCards;
+  </script>
+</body>
+</html>
